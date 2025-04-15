@@ -74,11 +74,12 @@ export class LitellmCdkStack extends cdk.Stack {
       ],
     }));
 
-    // Add permissions to use STS
+    // Add permissions to use STS and Bedrock
     taskRole.addToPolicy(new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
       actions: [
         'sts:AssumeRole',
+        'bedrock:InvokeModel'
       ],
       resources: ['*'],
     }));
@@ -92,7 +93,7 @@ export class LitellmCdkStack extends cdk.Stack {
 
     // Add container to task definition
     const container = taskDefinition.addContainer('LiteLLMContainer', {
-      image: ecs.ContainerImage.fromAsset('../LiteLLM'),
+      image: ecs.ContainerImage.fromAsset('./proxy'),
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'LiteLLM' }),
       environment: {
         PORT: '8080',
