@@ -163,7 +163,7 @@ export class LitellmCdkStack extends cdk.Stack {
       fixedResponseConfig: {
         statusCode: '403',
         contentType: 'text/plain',
-        messageBody: 'Direct IP access is not allowed'
+        messageBody: 'Forbidden: Access denied.',
       }
     }];
 
