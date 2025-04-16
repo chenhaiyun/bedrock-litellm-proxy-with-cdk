@@ -4,6 +4,7 @@ import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ecs_patterns from 'aws-cdk-lib/aws-ecs-patterns';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import { Construct } from 'constructs';
 
 export class LitellmCdkStack extends cdk.Stack {
@@ -118,7 +119,14 @@ export class LitellmCdkStack extends cdk.Stack {
       allowAllOutbound: true,
     });
 
-    // Create Fargate Service
+    // Create ALB Security Group
+    const albSecurityGroup = new ec2.SecurityGroup(this, 'ALBSecurityGroup', {
+      vpc,
+      description: 'Security group for Application Load Balancer',
+      allowAllOutbound: true,
+    });
+
+    // Create Fargate Service with ALB
     const fargateService = new ecs_patterns.ApplicationLoadBalancedFargateService(this, 'LiteLLMService', {
       cluster: cluster,
       taskDefinition: taskDefinition,
@@ -127,14 +135,52 @@ export class LitellmCdkStack extends cdk.Stack {
       assignPublicIp: false, // Disable public IP assignment
       listenerPort: 80,
       securityGroups: [fargateSecurityGroup], // Assign security group to Fargate tasks
+      loadBalancer: new elbv2.ApplicationLoadBalancer(this, 'ALB', {
+        vpc,
+        internetFacing: true,
+        securityGroup: albSecurityGroup
+      })
     });
+
+    // Get the listener and target group
+    const listener = fargateService.listener;
+    const targetGroup = fargateService.targetGroup;
+
+    // Create a rule for host-based routing
+    new elbv2.ApplicationListenerRule(this, 'AllowViaDNS', {
+      listener: listener,
+      priority: 1,
+      conditions: [
+        elbv2.ListenerCondition.hostHeaders([fargateService.loadBalancer.loadBalancerDnsName])
+      ],
+      action: elbv2.ListenerAction.forward([targetGroup])
+    });
+
+    // Override the default action to block direct IP access
+    const cfnListener = listener.node.defaultChild as elbv2.CfnListener;
+    cfnListener.defaultActions = [{
+      type: 'fixed-response',
+      fixedResponseConfig: {
+        statusCode: '403',
+        contentType: 'text/plain',
+        messageBody: 'Direct IP access is not allowed'
+      }
+    }];
+
+    // Configure security groups
+    albSecurityGroup.addIngressRule(
+      ec2.Peer.anyIpv4(),
+      ec2.Port.tcp(80),
+      'Allow HTTP traffic only'
+    );
 
     // Allow inbound traffic only from the ALB
     fargateSecurityGroup.addIngressRule(
-      ec2.Peer.securityGroupId(fargateService.loadBalancer.connections.securityGroups[0].securityGroupId),
+      ec2.Peer.securityGroupId(albSecurityGroup.securityGroupId),
       ec2.Port.tcp(8080),
       'Allow inbound traffic from ALB only'
     );
+
 
     // Add scaling policy
     const scaling = fargateService.service.autoScaleTaskCount({
