@@ -111,15 +111,30 @@ export class LitellmCdkStack extends cdk.Stack {
       protocol: ecs.Protocol.TCP,
     });
 
+    // Create security group for Fargate tasks
+    const fargateSecurityGroup = new ec2.SecurityGroup(this, 'FargateSecurityGroup', {
+      vpc,
+      description: 'Security group for Fargate tasks',
+      allowAllOutbound: true,
+    });
+
     // Create Fargate Service
     const fargateService = new ecs_patterns.ApplicationLoadBalancedFargateService(this, 'LiteLLMService', {
       cluster: cluster,
       taskDefinition: taskDefinition,
       desiredCount: 1,
       publicLoadBalancer: true,
-      assignPublicIp: true,
+      assignPublicIp: false, // Disable public IP assignment
       listenerPort: 80,
+      securityGroups: [fargateSecurityGroup], // Assign security group to Fargate tasks
     });
+
+    // Allow inbound traffic only from the ALB
+    fargateSecurityGroup.addIngressRule(
+      ec2.Peer.securityGroupId(fargateService.loadBalancer.connections.securityGroups[0].securityGroupId),
+      ec2.Port.tcp(8080),
+      'Allow inbound traffic from ALB only'
+    );
 
     // Add scaling policy
     const scaling = fargateService.service.autoScaleTaskCount({
