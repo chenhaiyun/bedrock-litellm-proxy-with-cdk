@@ -80,7 +80,8 @@ export class LitellmCdkStack extends cdk.Stack {
       effect: iam.Effect.ALLOW,
       actions: [
         'sts:AssumeRole',
-        'bedrock:InvokeModel'
+        'bedrock:InvokeModel',
+        "bedrock:InvokeModelWithResponseStream",
       ],
       resources: ['*'],
     }));
